@@ -102,9 +102,25 @@ async def synthesize_speech(
 
 
 @router.post("/tts")
-async def tts_endpoint(request: Request, tts_request: TTSRequest) -> Response:
+async def tts_endpoint(request: Request) -> Response:
     """HTTP POST endpoint для TTS."""
-    logger.info(f"TTS запрос: voice={tts_request.voice}, text_len={len(tts_request.text)}")
+    # Логируем сырые данные для отладки
+    content_type = request.headers.get("content-type", "")
+    raw_body = await request.body()
+    logger.info(f"TTS запрос: content-type={content_type}, body={raw_body[:500] if raw_body else 'empty'}")
+
+    # Парсим JSON вручную для большей гибкости
+    import json
+    try:
+        if raw_body:
+            data = json.loads(raw_body)
+        else:
+            raise ValueError("Empty body")
+        tts_request = TTSRequest(**data)
+    except Exception as e:
+        logger.error(f"TTS parse error: {e}, body={raw_body}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail={"error": f"Invalid request body: {e}"})
 
     try:
         token = await sber_auth.get_token()
