@@ -5,12 +5,24 @@
 ## Быстрый старт
 
 1. Получите Client ID и Client Secret в [SaluteSpeech Studio](https://developers.sber.ru/studio/)
-2. Скопируйте `.env.example` в `.env` и заполните `SBER_CLIENT_ID` и `SBER_CLIENT_SECRET`
-3. Запустите:
+2. Соберите и запустите:
 
 ```bash
-docker-compose up -d
+docker build -t sber-speech-adapter .
+docker run -p 3000:3000 \
+  -e SBER_CLIENT_ID=ваш_client_id \
+  -e SBER_CLIENT_SECRET=ваш_client_secret \
+  sber-speech-adapter
 ```
+
+## Деплой на Dokploy
+
+1. Создайте новое приложение → Docker
+2. Укажите Git репозиторий с этим проектом
+3. Добавьте переменные окружения:
+   - `SBER_CLIENT_ID`
+   - `SBER_CLIENT_SECRET`
+4. Деплой
 
 ## Endpoints
 
