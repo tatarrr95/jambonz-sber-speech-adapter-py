@@ -11,7 +11,7 @@ from fastapi import FastAPI, WebSocket
 from dotenv import load_dotenv
 
 from app.auth import SberAuth
-from app import stt, tts
+from app import stt, tts, stt_echo
 
 load_dotenv()
 
@@ -53,6 +53,7 @@ fastapi_app = FastAPI(
 
 fastapi_app.include_router(stt.router)
 fastapi_app.include_router(tts.router)
+fastapi_app.include_router(stt_echo.router)
 
 
 @fastapi_app.get("/health")
