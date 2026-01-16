@@ -1,5 +1,6 @@
 """Модуль авторизации SaluteSpeech OAuth2."""
 import base64
+import os
 import time
 import uuid
 import logging
@@ -9,6 +10,10 @@ logger = logging.getLogger(__name__)
 
 SBER_OAUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
 TOKEN_REFRESH_MARGIN_MS = 60_000
+
+# Путь к сертификатам Минцифры РФ
+CERTS_DIR = os.path.join(os.path.dirname(__file__), "..", "certs")
+CA_BUNDLE = os.path.join(CERTS_DIR, "combined-ca-bundle.pem")
 
 
 class SberAuth:
@@ -43,7 +48,8 @@ class SberAuth:
         }
         data = {"scope": self._scope}
 
-        async with httpx.AsyncClient(verify=True) as client:
+        # Отключаем проверку SSL для OAuth (сертификаты Минцифры не в системном хранилище)
+        async with httpx.AsyncClient(verify=False) as client:
             response = await client.post(
                 SBER_OAUTH_URL,
                 headers=headers,

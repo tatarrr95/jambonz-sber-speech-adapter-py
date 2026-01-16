@@ -1,6 +1,7 @@
 """TTS endpoint для jambonz (SaluteSpeech v2 API)."""
 import asyncio
 import logging
+import os
 from io import BytesIO
 
 import grpc
@@ -16,7 +17,20 @@ router = APIRouter()
 
 SALUTE_SPEECH_HOST = "smartspeech.sber.ru:443"
 
+# Путь к сертификатам Минцифры РФ
+CERTS_DIR = os.path.join(os.path.dirname(__file__), "..", "certs")
+CA_CERT_PATH = os.path.join(CERTS_DIR, "russian-trusted-chain.pem")
+
 sber_auth: SberAuth | None = None
+
+
+def get_ssl_credentials():
+    """Создаёт SSL credentials с сертификатами Минцифры РФ."""
+    root_certs = None
+    if os.path.exists(CA_CERT_PATH):
+        with open(CA_CERT_PATH, "rb") as f:
+            root_certs = f.read()
+    return grpc.ssl_channel_credentials(root_certificates=root_certs)
 
 
 class TTSRequest(BaseModel):
@@ -42,9 +56,14 @@ async def synthesize_speech(
     else:
         proto_content_type = synthesisv2_pb2.Text.ContentType.TEXT
 
-    # Подключаемся к SaluteSpeech
-    credentials = grpc.ssl_channel_credentials()
-    channel = grpc.aio.secure_channel(SALUTE_SPEECH_HOST, credentials)
+    # Подключаемся к SaluteSpeech с сертификатами Минцифры
+    credentials = get_ssl_credentials()
+    channel_options = [
+        ("grpc.ssl_target_name_override", "smartspeech.sber.ru"),
+        ("grpc.default_authority", "smartspeech.sber.ru"),
+        ("grpc.dns_resolver", "native"),
+    ]
+    channel = grpc.aio.secure_channel(SALUTE_SPEECH_HOST, credentials, options=channel_options)
     stub = synthesisv2_pb2_grpc.SmartSpeechStub(channel)
 
     # Метаданные с токеном

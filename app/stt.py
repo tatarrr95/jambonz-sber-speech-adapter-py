@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import json
+import os
 from typing import Any
 
 import grpc
@@ -16,7 +17,20 @@ router = APIRouter()
 
 SALUTE_SPEECH_HOST = "smartspeech.sber.ru:443"
 
+# Путь к сертификатам Минцифры РФ
+CERTS_DIR = os.path.join(os.path.dirname(__file__), "..", "certs")
+CA_CERT_PATH = os.path.join(CERTS_DIR, "russian-trusted-chain.pem")
+
 sber_auth: SberAuth | None = None
+
+
+def get_ssl_credentials():
+    """Создаёт SSL credentials с сертификатами Минцифры РФ."""
+    root_certs = None
+    if os.path.exists(CA_CERT_PATH):
+        with open(CA_CERT_PATH, "rb") as f:
+            root_certs = f.read()
+    return grpc.ssl_channel_credentials(root_certificates=root_certs)
 
 
 def parse_start_message(msg: dict[str, Any]) -> dict[str, Any]:
@@ -123,8 +137,13 @@ async def stt_endpoint(websocket: WebSocket):
         options = parse_start_message(start_msg)
         logger.info(f"STT start: language={options['language']}, sample_rate={options['sample_rate']}")
 
-        credentials = grpc.ssl_channel_credentials()
-        grpc_channel = grpc.aio.secure_channel(SALUTE_SPEECH_HOST, credentials)
+        credentials = get_ssl_credentials()
+        channel_options = [
+            ("grpc.ssl_target_name_override", "smartspeech.sber.ru"),
+            ("grpc.default_authority", "smartspeech.sber.ru"),
+            ("grpc.dns_resolver", "native"),
+        ]
+        grpc_channel = grpc.aio.secure_channel(SALUTE_SPEECH_HOST, credentials, options=channel_options)
         stub = recognitionv2_pb2_grpc.SmartSpeechStub(grpc_channel)
         metadata = [("authorization", f"Bearer {token}")]
 

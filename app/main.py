@@ -1,5 +1,9 @@
 """FastAPI приложение sber-speech-adapter (v2 API)."""
 import os
+
+# Используем системный DNS resolver вместо c-ares (решает проблемы с DNS в некоторых сетях)
+os.environ.setdefault("GRPC_DNS_RESOLVER", "native")
+
 import logging
 from contextlib import asynccontextmanager
 
