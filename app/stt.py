@@ -117,8 +117,13 @@ async def stt_endpoint(websocket: WebSocket):
     5. jambonz отправляет JSON {type: "stop"}
     6. Адаптер закрывает соединение
     """
+    # Логируем входящее соединение
+    client = websocket.client
+    headers = dict(websocket.headers)
+    logger.info(f"STT WebSocket попытка подключения: client={client}, headers={headers}")
+
     await websocket.accept()
-    logger.info("STT WebSocket подключен")
+    logger.info("STT WebSocket подключен (accepted)")
 
     grpc_channel = None
     request_queue: asyncio.Queue = asyncio.Queue()

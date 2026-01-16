@@ -51,6 +51,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    """Логирует все входящие HTTP запросы для отладки."""
+    logger.info(f"REQUEST: {request.method} {request.url.path} from {request.client} headers={dict(request.headers)}")
+    response = await call_next(request)
+    logger.info(f"RESPONSE: {request.method} {request.url.path} -> {response.status_code}")
+    return response
+
+
 app.include_router(stt.router)
 app.include_router(tts.router)
 
