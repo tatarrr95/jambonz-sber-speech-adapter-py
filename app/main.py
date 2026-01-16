@@ -7,7 +7,7 @@ os.environ.setdefault("GRPC_DNS_RESOLVER", "native")
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from dotenv import load_dotenv
 
 from app.auth import SberAuth
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(fastapi_app: FastAPI):
     client_id = os.getenv("SBER_CLIENT_ID")
     client_secret = os.getenv("SBER_CLIENT_SECRET")
     scope = os.getenv("SBER_SCOPE", "SALUTE_SPEECH_PERS")
@@ -44,39 +44,36 @@ async def lifespan(app: FastAPI):
     logger.info("sber-speech-adapter остановлен")
 
 
-app = FastAPI(
+fastapi_app = FastAPI(
     title="sber-speech-adapter",
     description="Адаптер jambonz для SaluteSpeech v2 (Сбер)",
     version="2.0.0",
     lifespan=lifespan,
 )
 
-
-@app.middleware("http")
-async def log_requests(request, call_next):
-    """Логирует все входящие HTTP запросы для отладки."""
-    logger.info(f"REQUEST: {request.method} {request.url.path} from {request.client} headers={dict(request.headers)}")
-    response = await call_next(request)
-    logger.info(f"RESPONSE: {request.method} {request.url.path} -> {response.status_code}")
-    return response
+fastapi_app.include_router(stt.router)
+fastapi_app.include_router(tts.router)
 
 
-app.include_router(stt.router)
-app.include_router(tts.router)
-
-
-@app.get("/health")
+@fastapi_app.get("/health")
 async def health():
     return {"status": "ok", "service": "sber-speech-adapter", "api_version": "v2"}
 
 
-from fastapi import WebSocket
-
-@app.websocket("/{path:path}")
+@fastapi_app.websocket("/{path:path}")
 async def catch_all_websocket(websocket: WebSocket, path: str):
     """Catch-all для диагностики WebSocket запросов."""
     logger.warning(f"CATCH-ALL WebSocket: path=/{path}, client={websocket.client}, headers={dict(websocket.headers)}")
     await websocket.close(code=1000)
+
+
+# ASGI wrapper для логирования ВСЕХ запросов (включая WebSocket)
+async def app(scope, receive, send):
+    """Логирует все ASGI запросы до обработки."""
+    if scope["type"] in ("http", "websocket"):
+        headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
+        logger.info(f"ASGI: type={scope['type']}, method={scope.get('method')}, path={scope.get('path')}, headers={headers}")
+    await fastapi_app(scope, receive, send)
 
 
 if __name__ == "__main__":
