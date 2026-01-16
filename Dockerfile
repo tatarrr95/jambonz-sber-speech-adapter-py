@@ -14,6 +14,7 @@ COPY build_protos.sh .
 RUN mkdir -p app/generated && chmod +x build_protos.sh && ./build_protos.sh
 
 COPY app/ app/
+COPY certs/ certs/
 
 ENV PORT=3000
 EXPOSE 3000
