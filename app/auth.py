@@ -1,4 +1,5 @@
 """Модуль авторизации SaluteSpeech OAuth2."""
+import base64
 import time
 import uuid
 import logging
@@ -13,8 +14,8 @@ TOKEN_REFRESH_MARGIN_MS = 60_000
 class SberAuth:
     """Менеджер OAuth2 токенов для SaluteSpeech API."""
 
-    def __init__(self, auth_key: str, scope: str = "SALUTE_SPEECH_PERS"):
-        self._auth_key = auth_key
+    def __init__(self, client_id: str, client_secret: str, scope: str = "SALUTE_SPEECH_PERS"):
+        self._auth_key = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
         self._scope = scope
         self._token: str | None = None
         self._expires_at: int = 0

@@ -21,13 +21,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    auth_key = os.getenv("SBER_AUTH_KEY")
+    client_id = os.getenv("SBER_CLIENT_ID")
+    client_secret = os.getenv("SBER_CLIENT_SECRET")
     scope = os.getenv("SBER_SCOPE", "SALUTE_SPEECH_PERS")
 
-    if not auth_key:
-        raise RuntimeError("SBER_AUTH_KEY environment variable is required")
+    if not client_id or not client_secret:
+        raise RuntimeError("SBER_CLIENT_ID and SBER_CLIENT_SECRET environment variables are required")
 
-    sber_auth = SberAuth(auth_key=auth_key, scope=scope)
+    sber_auth = SberAuth(client_id=client_id, client_secret=client_secret, scope=scope)
 
     stt.sber_auth = sber_auth
     tts.sber_auth = sber_auth

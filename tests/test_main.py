@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 def test_health_endpoint():
     """Health endpoint должен возвращать 200 OK."""
-    with patch.dict("os.environ", {"SBER_AUTH_KEY": "test", "SBER_SCOPE": "SALUTE_SPEECH_PERS"}):
+    with patch.dict("os.environ", {"SBER_CLIENT_ID": "test_id", "SBER_CLIENT_SECRET": "test_secret", "SBER_SCOPE": "SALUTE_SPEECH_PERS"}):
         from app.main import app
         client = TestClient(app)
 
@@ -26,7 +26,7 @@ def test_health_endpoint():
 
 def test_routes_registered():
     """Роуты /tts и /stt должны быть зарегистрированы."""
-    with patch.dict("os.environ", {"SBER_AUTH_KEY": "test", "SBER_SCOPE": "SALUTE_SPEECH_PERS"}):
+    with patch.dict("os.environ", {"SBER_CLIENT_ID": "test_id", "SBER_CLIENT_SECRET": "test_secret", "SBER_SCOPE": "SALUTE_SPEECH_PERS"}):
         from app.main import app
 
         routes = [route.path for route in app.routes]

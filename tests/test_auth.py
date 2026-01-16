@@ -7,7 +7,8 @@ from app.auth import SberAuth
 @pytest.fixture
 def auth():
     return SberAuth(
-        auth_key="test_auth_key_base64",
+        client_id="test_client_id",
+        client_secret="test_client_secret",
         scope="SALUTE_SPEECH_PERS"
     )
 
