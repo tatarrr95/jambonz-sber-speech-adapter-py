@@ -70,6 +70,15 @@ async def health():
     return {"status": "ok", "service": "sber-speech-adapter", "api_version": "v2"}
 
 
+from fastapi import WebSocket
+
+@app.websocket("/{path:path}")
+async def catch_all_websocket(websocket: WebSocket, path: str):
+    """Catch-all для диагностики WebSocket запросов."""
+    logger.warning(f"CATCH-ALL WebSocket: path=/{path}, client={websocket.client}, headers={dict(websocket.headers)}")
+    await websocket.close(code=1000)
+
+
 if __name__ == "__main__":
     import uvicorn
 
