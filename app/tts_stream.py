@@ -62,11 +62,16 @@ async def tts_stream_endpoint(websocket: WebSocket):
     try:
         while True:
             message = await websocket.receive()
+            logger.info(f"TTS Stream RAW message: {message}")
 
             if message["type"] == "websocket.receive":
-                if "text" in message:
+                if "bytes" in message:
+                    logger.info(f"TTS Stream BINARY message: {len(message['bytes'])} bytes")
+                elif "text" in message:
+                    logger.info(f"TTS Stream TEXT message: {message['text']}")
                     data = json.loads(message["text"])
                     msg_type = data.get("type")
+                    logger.info(f"TTS Stream parsed type: {msg_type}, data: {data}")
 
                     if msg_type == "stream":
                         # Буферизуем текст
