@@ -116,6 +116,7 @@ async def synthesize_and_stream(
     language: str,
 ) -> None:
     """Синтезирует речь и стримит аудио chunks в WebSocket."""
+    channel = None
     try:
         token = await sber_auth.get_token()
 
@@ -174,11 +175,22 @@ async def synthesize_and_stream(
         await channel.close()
         logger.info(f"TTS Stream: отправлено {chunks_sent} chunks, {total_bytes} bytes, {sample_rate}Hz")
 
+    except asyncio.CancelledError:
+        logger.warning("TTS Stream: синтез отменён (клиент отключился)")
+        if channel:
+            await channel.close()
+        raise
     except grpc.aio.AioRpcError as e:
         logger.error(f"TTS Stream gRPC ошибка: {e.code()} {e.details()}")
-        error_msg = json.dumps({"type": "error", "error": str(e.details())})
-        await websocket.send_text(error_msg)
+        try:
+            error_msg = json.dumps({"type": "error", "error": str(e.details())})
+            await websocket.send_text(error_msg)
+        except:
+            pass
     except Exception as e:
         logger.error(f"TTS Stream ошибка синтеза: {e}")
-        error_msg = json.dumps({"type": "error", "error": str(e)})
-        await websocket.send_text(error_msg)
+        try:
+            error_msg = json.dumps({"type": "error", "error": str(e)})
+            await websocket.send_text(error_msg)
+        except:
+            pass
