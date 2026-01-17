@@ -1,11 +1,10 @@
 """TTS endpoint для jambonz (SaluteSpeech v2 API)."""
-import asyncio
 import logging
 import os
 from io import BytesIO
 
 import grpc
-from fastapi import APIRouter, Request, Response, HTTPException
+from fastapi import APIRouter, Response, HTTPException
 from pydantic import BaseModel
 
 from app.generated import synthesisv2_pb2, synthesisv2_pb2_grpc
@@ -102,26 +101,8 @@ async def synthesize_speech(
 
 
 @router.post("/tts")
-async def tts_endpoint(request: Request) -> Response:
+async def tts_endpoint(tts_request: TTSRequest) -> Response:
     """HTTP POST endpoint для TTS."""
-    # Логируем сырые данные для отладки
-    content_type = request.headers.get("content-type", "")
-    raw_body = await request.body()
-    logger.info(f"TTS запрос: content-type={content_type}, body={raw_body[:500] if raw_body else 'empty'}")
-
-    # Парсим JSON вручную для большей гибкости
-    import json
-    try:
-        if raw_body:
-            data = json.loads(raw_body)
-        else:
-            raise ValueError("Empty body")
-        tts_request = TTSRequest(**data)
-    except Exception as e:
-        logger.error(f"TTS parse error: {e}, body={raw_body}")
-        from fastapi import HTTPException
-        raise HTTPException(status_code=422, detail={"error": f"Invalid request body: {e}"})
-
     try:
         token = await sber_auth.get_token()
 

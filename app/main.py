@@ -7,11 +7,11 @@ os.environ.setdefault("GRPC_DNS_RESOLVER", "native")
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI
 from dotenv import load_dotenv
 
 from app.auth import SberAuth
-from app import stt, tts, stt_echo
+from app import stt, tts
 
 load_dotenv()
 
@@ -53,7 +53,6 @@ fastapi_app = FastAPI(
 
 fastapi_app.include_router(stt.router)
 fastapi_app.include_router(tts.router)
-fastapi_app.include_router(stt_echo.router)
 
 
 @fastapi_app.get("/health")
@@ -61,20 +60,7 @@ async def health():
     return {"status": "ok", "service": "sber-speech-adapter", "api_version": "v2"}
 
 
-@fastapi_app.websocket("/{path:path}")
-async def catch_all_websocket(websocket: WebSocket, path: str):
-    """Catch-all для диагностики WebSocket запросов."""
-    logger.warning(f"CATCH-ALL WebSocket: path=/{path}, client={websocket.client}, headers={dict(websocket.headers)}")
-    await websocket.close(code=1000)
-
-
-# ASGI wrapper для логирования ВСЕХ запросов (включая WebSocket)
-async def app(scope, receive, send):
-    """Логирует все ASGI запросы до обработки."""
-    if scope["type"] in ("http", "websocket"):
-        headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
-        logger.info(f"ASGI: type={scope['type']}, method={scope.get('method')}, path={scope.get('path')}, headers={headers}")
-    await fastapi_app(scope, receive, send)
+app = fastapi_app
 
 
 if __name__ == "__main__":
