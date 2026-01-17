@@ -57,6 +57,9 @@ async def tts_stream_endpoint(websocket: WebSocket):
     if "language" in query_params:
         language = query_params["language"]
 
+    # Конвертируем формат языка: ru_RU -> ru-RU (jambonz использует _, Sber использует -)
+    language = language.replace("_", "-")
+
     logger.info(f"TTS Stream: voice={voice}, language={language}")
 
     # ВАЖНО: Отправляем connect message чтобы jambonz начал слать текст
