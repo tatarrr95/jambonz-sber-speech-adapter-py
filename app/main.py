@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from dotenv import load_dotenv
 
 from app.auth import SberAuth
-from app import stt, tts
+from app import stt, tts, tts_stream
 
 load_dotenv()
 
@@ -36,6 +36,7 @@ async def lifespan(fastapi_app: FastAPI):
 
     stt.sber_auth = sber_auth
     tts.sber_auth = sber_auth
+    tts_stream.sber_auth = sber_auth
 
     logger.info("sber-speech-adapter (v2) запущен")
 
@@ -53,6 +54,7 @@ fastapi_app = FastAPI(
 
 fastapi_app.include_router(stt.router)
 fastapi_app.include_router(tts.router)
+fastapi_app.include_router(tts_stream.router)
 
 
 @fastapi_app.get("/health")
