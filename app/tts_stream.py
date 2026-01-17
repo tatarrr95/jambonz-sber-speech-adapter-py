@@ -146,10 +146,9 @@ async def synthesize_and_stream(
 
         async def request_generator():
             logger.info(f"TTS Stream: отправляем Options (voice={voice}, rate={sample_rate})")
-            # Отправляем Options - используем PCM для streaming (без WAV заголовка)
+            # Используем WAV (как в HTTP TTS)
             options = synthesisv2_pb2.Options(
-                audio_encoding=synthesisv2_pb2.Options.AudioEncoding.PCM_S16LE,
-                sample_rate=sample_rate,
+                audio_encoding=synthesisv2_pb2.Options.AudioEncoding.WAV,
                 language=language,
                 voice=voice,
             )
