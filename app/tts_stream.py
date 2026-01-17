@@ -133,19 +133,8 @@ async def synthesize_and_stream(
 
         metadata = [("authorization", f"Bearer {token}")]
 
-        # Определяем sample rate из имени голоса (например Nec_24000 → 24000)
-        sample_rate = 24000  # По умолчанию 24kHz
-        if "_" in voice:
-            try:
-                rate_str = voice.split("_")[-1]
-                parsed_rate = int(rate_str)
-                if parsed_rate in (8000, 16000, 24000, 48000):
-                    sample_rate = parsed_rate
-            except ValueError:
-                pass
-
         async def request_generator():
-            logger.info(f"TTS Stream: отправляем Options (voice={voice}, rate={sample_rate})")
+            logger.debug(f"TTS Stream: отправляем Options (voice={voice})")
             # Используем WAV (как в HTTP TTS)
             options = synthesisv2_pb2.Options(
                 audio_encoding=synthesisv2_pb2.Options.AudioEncoding.WAV,
@@ -179,7 +168,7 @@ async def synthesize_and_stream(
                     total_bytes += len(audio_chunk)
 
         await channel.close()
-        logger.info(f"TTS Stream: отправлено {chunks_sent} chunks, {total_bytes} bytes, {sample_rate}Hz")
+        logger.info(f"TTS Stream: отправлено {chunks_sent} chunks, {total_bytes} bytes")
 
     except asyncio.CancelledError:
         logger.warning("TTS Stream: синтез отменён (клиент отключился)")
