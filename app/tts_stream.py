@@ -179,7 +179,7 @@ async def synthesize_and_stream(
         logger.warning("TTS Stream: синтез отменён (клиент отключился)")
         if channel:
             await channel.close()
-        raise
+        # Не пробрасываем исключение - просто выходим из функции
     except grpc.aio.AioRpcError as e:
         logger.error(f"TTS Stream gRPC ошибка: {e.code()} {e.details()}")
         try:
