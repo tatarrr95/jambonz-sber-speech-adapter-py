@@ -36,11 +36,11 @@ async def tts_stream_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint для TTS streaming.
 
-    Протокол:
-    1. jambonz подключается
+    Протокол jambonz custom TTS streaming:
+    1. Провайдер отправляет {"type": "connect", "data": {...}} - подтверждение
     2. jambonz отправляет {"type": "stream", "text": "..."} - текст для синтеза
     3. jambonz отправляет {"type": "flush"} - сгенерировать аудио
-    4. Адаптер стримит бинарные аудио chunks
+    4. Провайдер стримит бинарные аудио chunks
     5. jambonz отправляет {"type": "stop"} - закрыть соединение
     """
     await websocket.accept()
@@ -58,6 +58,17 @@ async def tts_stream_endpoint(websocket: WebSocket):
         language = query_params["language"]
 
     logger.info(f"TTS Stream: voice={voice}, language={language}")
+
+    # ВАЖНО: Отправляем connect message чтобы jambonz начал слать текст
+    connect_msg = {
+        "type": "connect",
+        "data": {
+            "sample_rate": 24000,  # Sber Nec голоса используют 24000 Hz
+            "base64_encoding": False
+        }
+    }
+    await websocket.send_text(json.dumps(connect_msg))
+    logger.info(f"TTS Stream: отправлен connect message: {connect_msg}")
 
     try:
         while True:
@@ -140,9 +151,9 @@ async def synthesize_and_stream(
 
         async def request_generator():
             logger.debug(f"TTS Stream: отправляем Options (voice={voice})")
-            # Используем WAV (как в HTTP TTS)
+            # Используем PCM_S16LE для streaming (без WAV заголовков)
             options = synthesisv2_pb2.Options(
-                audio_encoding=synthesisv2_pb2.Options.AudioEncoding.WAV,
+                audio_encoding=synthesisv2_pb2.Options.AudioEncoding.PCM_S16LE,
                 language=language,
                 voice=voice,
             )
