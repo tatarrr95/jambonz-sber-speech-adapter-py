@@ -119,6 +119,7 @@ async def synthesize_and_stream(
     channel = None
     try:
         token = await sber_auth.get_token()
+        logger.info("TTS Stream: токен получен, создаём gRPC channel")
 
         credentials = get_ssl_credentials()
         channel_options = [
@@ -128,6 +129,7 @@ async def synthesize_and_stream(
         ]
         channel = grpc.aio.secure_channel(SALUTE_SPEECH_HOST, credentials, options=channel_options)
         stub = synthesisv2_pb2_grpc.SmartSpeechStub(channel)
+        logger.info("TTS Stream: gRPC channel создан")
 
         metadata = [("authorization", f"Bearer {token}")]
 
@@ -143,6 +145,7 @@ async def synthesize_and_stream(
                 pass
 
         async def request_generator():
+            logger.info(f"TTS Stream: отправляем Options (voice={voice}, rate={sample_rate})")
             # Отправляем Options - используем PCM для streaming (без WAV заголовка)
             options = synthesisv2_pb2.Options(
                 audio_encoding=synthesisv2_pb2.Options.AudioEncoding.PCM_S16LE,
@@ -152,14 +155,18 @@ async def synthesize_and_stream(
             )
             yield synthesisv2_pb2.SynthesisRequest(options=options)
 
+            logger.info(f"TTS Stream: отправляем Text ({len(text)} символов)")
             # Отправляем Text
             text_msg = synthesisv2_pb2.Text(
                 text=text,
                 content_type=synthesisv2_pb2.Text.ContentType.TEXT,
             )
             yield synthesisv2_pb2.SynthesisRequest(text=text_msg)
+            logger.info("TTS Stream: request_generator завершён")
 
+        logger.info("TTS Stream: вызываем gRPC Synthesize")
         response_stream = stub.Synthesize(request_generator(), metadata=metadata)
+        logger.info("TTS Stream: gRPC stream получен, начинаем итерацию")
 
         chunks_sent = 0
         total_bytes = 0
