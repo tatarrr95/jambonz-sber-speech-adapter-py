@@ -66,7 +66,7 @@ async def tts_stream_endpoint(websocket: WebSocket):
     connect_msg = {
         "type": "connect",
         "data": {
-            "sample_rate": 24000,  # Sber Nec голоса используют 24000 Hz
+            "sample_rate": 8000,
             "base64_encoding": False
         }
     }
