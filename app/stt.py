@@ -6,6 +6,7 @@ import os
 from typing import Any
 
 import grpc
+from google.protobuf.duration_pb2 import Duration
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.generated import recognitionv2_pb2, recognitionv2_pb2_grpc
@@ -42,6 +43,8 @@ def parse_start_message(msg: dict[str, Any]) -> dict[str, Any]:
         "sample_rate": msg.get("sampleRateHz", 8000),
         "enable_partial_results": msg.get("interimResults", True),
         "hints": options.get("hints", []),
+        "no_speech_timeout": options.get("no_speech_timeout"),
+        "max_speech_timeout": options.get("max_speech_timeout"),
     }
 
 
@@ -91,7 +94,7 @@ def build_recognition_options(options: dict[str, Any]) -> recognitionv2_pb2.Reco
         capitalization=recognitionv2_pb2.OptionalBool(enable=True),
     )
 
-    return recognitionv2_pb2.RecognitionOptions(
+    kwargs = dict(
         audio_encoding=recognitionv2_pb2.RecognitionOptions.AudioEncoding.PCM_S16LE,
         sample_rate=options.get("sample_rate", 8000),
         channels_count=1,
@@ -102,6 +105,18 @@ def build_recognition_options(options: dict[str, Any]) -> recognitionv2_pb2.Reco
         hints=hints,
         normalization_options=normalization,
     )
+
+    no_speech = options.get("no_speech_timeout")
+    if no_speech is not None:
+        kwargs["no_speech_timeout"] = Duration(seconds=int(no_speech))
+        logger.info(f"STT no_speech_timeout={no_speech}s")
+
+    max_speech = options.get("max_speech_timeout")
+    if max_speech is not None:
+        kwargs["max_speech_timeout"] = Duration(seconds=int(max_speech))
+        logger.info(f"STT max_speech_timeout={max_speech}s")
+
+    return recognitionv2_pb2.RecognitionOptions(**kwargs)
 
 
 @router.websocket("/stt")
@@ -126,6 +141,7 @@ async def stt_endpoint(websocket: WebSocket):
     logger.info("STT WebSocket подключен (accepted)")
 
     grpc_channel = None
+    grpc_task: asyncio.Task | None = None
     request_queue: asyncio.Queue = asyncio.Queue()
 
     try:
@@ -147,6 +163,11 @@ async def stt_endpoint(websocket: WebSocket):
             ("grpc.ssl_target_name_override", "smartspeech.sber.ru"),
             ("grpc.default_authority", "smartspeech.sber.ru"),
             ("grpc.dns_resolver", "native"),
+            # Keepalive: детекция мёртвых соединений
+            ("grpc.keepalive_time_ms", 30000),
+            ("grpc.keepalive_timeout_ms", 10000),
+            ("grpc.keepalive_permit_without_calls", 1),
+            ("grpc.http2.max_pings_without_data", 0),
         ]
         grpc_channel = grpc.aio.secure_channel(SALUTE_SPEECH_HOST, credentials, options=channel_options)
         stub = recognitionv2_pb2_grpc.SmartSpeechStub(grpc_channel)
@@ -183,9 +204,16 @@ async def stt_endpoint(websocket: WebSocket):
                             )
                             await websocket.send_text(json.dumps(msg))
                             logger.debug(f"STT result: final={is_final}, text={text[:50] if text else ''}...")
+            except asyncio.CancelledError:
+                logger.info("gRPC reader отменён")
             except grpc.aio.AioRpcError as e:
                 logger.error(f"gRPC error: {e.code()} {e.details()}")
-                await websocket.send_text(json.dumps(format_error(str(e.details()))))
+                try:
+                    await websocket.send_text(json.dumps(format_error(str(e.details()))))
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.error(f"gRPC reader непредвиденная ошибка: {e}")
 
         grpc_task = asyncio.create_task(read_grpc_responses())
 
@@ -217,14 +245,22 @@ async def stt_endpoint(websocket: WebSocket):
         logger.error(f"STT ошибка: {e}")
         try:
             await websocket.send_text(json.dumps(format_error(str(e))))
-        except:
+        except Exception:
             pass
 
     finally:
+        # Отменяем gRPC-задачу если она ещё работает
+        if grpc_task and not grpc_task.done():
+            grpc_task.cancel()
+            try:
+                await asyncio.wait_for(grpc_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                logger.warning("gRPC task принудительно отменён")
+
         if grpc_channel:
             await grpc_channel.close()
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass
         logger.info("STT WebSocket закрыт")
