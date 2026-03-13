@@ -108,13 +108,19 @@ def build_recognition_options(options: dict[str, Any]) -> recognitionv2_pb2.Reco
 
     no_speech = options.get("no_speech_timeout")
     if no_speech is not None:
-        kwargs["no_speech_timeout"] = Duration(seconds=int(no_speech))
-        logger.info(f"STT no_speech_timeout={no_speech}s")
+        # jambonz может передавать в секундах (< 100) или миллисекундах (>= 100)
+        no_speech_sec = int(no_speech) if int(no_speech) < 100 else int(no_speech) // 1000
+        no_speech_sec = max(2, min(no_speech_sec, 20))  # SaluteSpeech: 2-20 сек
+        kwargs["no_speech_timeout"] = Duration(seconds=no_speech_sec)
+        logger.info(f"STT no_speech_timeout={no_speech_sec}s (raw={no_speech})")
 
     max_speech = options.get("max_speech_timeout")
     if max_speech is not None:
-        kwargs["max_speech_timeout"] = Duration(seconds=int(max_speech))
-        logger.info(f"STT max_speech_timeout={max_speech}s")
+        # jambonz может передавать в секундах (< 100) или миллисекундах (>= 100)
+        max_speech_sec = int(max_speech) if int(max_speech) < 100 else int(max_speech) // 1000
+        max_speech_sec = max(1, min(max_speech_sec, 20))  # SaluteSpeech: 0.5-20 сек
+        kwargs["max_speech_timeout"] = Duration(seconds=max_speech_sec)
+        logger.info(f"STT max_speech_timeout={max_speech_sec}s (raw={max_speech})")
 
     return recognitionv2_pb2.RecognitionOptions(**kwargs)
 
@@ -156,7 +162,8 @@ async def stt_endpoint(websocket: WebSocket):
             return
 
         options = parse_start_message(start_msg)
-        logger.info(f"STT start: language={options['language']}, sample_rate={options['sample_rate']}")
+        logger.info(f"STT start: language={options['language']}, sample_rate={options['sample_rate']}, partial={options['enable_partial_results']}")
+        logger.debug(f"STT start_msg: {json.dumps(start_msg, default=str)}")
 
         credentials = get_ssl_credentials()
         channel_options = [
@@ -203,7 +210,7 @@ async def stt_endpoint(websocket: WebSocket):
                                 language=options["language"],
                             )
                             await websocket.send_text(json.dumps(msg))
-                            logger.debug(f"STT result: final={is_final}, text={text[:50] if text else ''}...")
+                            logger.debug(f"STT result: final={is_final}, text={text[:80] if text else ''}...")
             except asyncio.CancelledError:
                 logger.info("gRPC reader отменён")
             except grpc.aio.AioRpcError as e:
