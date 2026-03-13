@@ -85,7 +85,7 @@ def build_recognition_options(options: dict[str, Any]) -> recognitionv2_pb2.Reco
 
     # v2 использует OptionalBool для некоторых полей
     enable_partial = recognitionv2_pb2.OptionalBool(enable=options.get("enable_partial_results", True))
-    enable_multi = recognitionv2_pb2.OptionalBool(enable=True)
+    enable_multi = recognitionv2_pb2.OptionalBool(enable=False)
 
     # Включаем нормализацию
     normalization = recognitionv2_pb2.NormalizationOptions(
