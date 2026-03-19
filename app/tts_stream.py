@@ -1,4 +1,9 @@
-"""TTS Streaming WebSocket endpoint для jambonz (SaluteSpeech v2 API)."""
+"""TTS Streaming WebSocket endpoint для jambonz (SaluteSpeech v2 API).
+
+Инкрементальный стриминг: каждое stream-сообщение от jambonz сразу
+синтезируется отдельным gRPC вызовом. Аудио стримится в jambonz
+по мере генерации, не дожидаясь flush.
+"""
 import asyncio
 import logging
 import json
@@ -36,17 +41,14 @@ async def tts_stream_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint для TTS streaming.
 
-    Протокол jambonz custom TTS streaming:
-    1. Провайдер отправляет {"type": "connect", "data": {...}} - подтверждение
-    2. jambonz отправляет {"type": "stream", "text": "..."} - текст для синтеза
-    3. jambonz отправляет {"type": "flush"} - сгенерировать аудио
-    4. Провайдер стримит бинарные аудио chunks
-    5. jambonz отправляет {"type": "stop"} - закрыть соединение
+    Протокол (jambonz → адаптер):
+    - stream: текст → сразу синтезируется отдельным gRPC вызовом
+    - flush: финализация turn (ожидание завершения текущего синтеза)
+    - stop: завершить сессию
     """
     await websocket.accept()
     logger.info("TTS Stream WebSocket подключен")
 
-    text_buffer = []
     voice = "Nec_24000"
     language = "ru-RU"
 
@@ -62,54 +64,69 @@ async def tts_stream_endpoint(websocket: WebSocket):
 
     logger.info(f"TTS Stream: voice={voice}, language={language}")
 
-    # ВАЖНО: Отправляем connect message чтобы jambonz начал слать текст
+    # Отправляем connect message чтобы jambonz начал слать текст
     connect_msg = {
         "type": "connect",
         "data": {
             "sample_rate": 8000,
-            "base64_encoding": False
-        }
+            "base64_encoding": False,
+        },
     }
     await websocket.send_text(json.dumps(connect_msg))
-    logger.info(f"TTS Stream: отправлен connect message: {connect_msg}")
+
+    # Очередь задач синтеза — выполняются последовательно
+    synth_queue: asyncio.Queue[str | None] = asyncio.Queue()
+    worker_task = None
+
+    async def _synth_worker():
+        """Последовательно синтезирует тексты из очереди."""
+        while True:
+            text = await synth_queue.get()
+            if text is None:
+                break
+            try:
+                await synthesize_and_stream(
+                    websocket=websocket,
+                    text=text,
+                    voice=voice,
+                    language=language,
+                )
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"TTS Stream: ошибка синтеза: {e}")
 
     try:
+        worker_task = asyncio.create_task(_synth_worker())
+
         while True:
             message = await websocket.receive()
-            logger.info(f"TTS Stream RAW message: {message}")
 
             if message["type"] == "websocket.receive":
-                if "bytes" in message:
-                    logger.info(f"TTS Stream BINARY message: {len(message['bytes'])} bytes")
-                elif "text" in message:
-                    logger.info(f"TTS Stream TEXT message: {message['text']}")
+                if "text" in message:
                     data = json.loads(message["text"])
                     msg_type = data.get("type")
-                    logger.info(f"TTS Stream parsed type: {msg_type}, data: {data}")
 
                     if msg_type == "stream":
-                        # Буферизуем текст
                         text = data.get("text", "")
-                        if text:
-                            text_buffer.append(text)
-                            logger.debug(f"TTS Stream: буферизован текст ({len(text)} символов)")
+                        if text.strip():
+                            logger.info(f"TTS Stream: stream → синтез ({len(text)} символов)")
+                            await synth_queue.put(text)
 
                     elif msg_type == "flush":
-                        # Синтезируем и стримим аудио
-                        if text_buffer:
-                            full_text = "".join(text_buffer)
-                            text_buffer.clear()
-                            logger.info(f"TTS Stream flush: синтез {len(full_text)} символов")
+                        logger.info("TTS Stream: flush")
 
-                            await synthesize_and_stream(
-                                websocket=websocket,
-                                text=full_text,
-                                voice=voice,
-                                language=language,
-                            )
+                    elif msg_type == "clear":
+                        logger.info("TTS Stream: clear (barge-in)")
+                        # Очищаем очередь
+                        while not synth_queue.empty():
+                            try:
+                                synth_queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
 
                     elif msg_type == "stop":
-                        logger.info("TTS Stream: получен stop")
+                        logger.info("TTS Stream: stop")
                         break
 
             elif message["type"] == "websocket.disconnect":
@@ -121,9 +138,17 @@ async def tts_stream_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"TTS Stream ошибка: {e}")
     finally:
+        if worker_task and not worker_task.done():
+            await synth_queue.put(None)
+            worker_task.cancel()
+            try:
+                await worker_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass
         logger.info("TTS Stream: соединение закрыто")
 
@@ -138,7 +163,6 @@ async def synthesize_and_stream(
     channel = None
     try:
         token = await sber_auth.get_token()
-        logger.info("TTS Stream: токен получен, создаём gRPC channel")
 
         credentials = get_ssl_credentials()
         channel_options = [
@@ -148,13 +172,10 @@ async def synthesize_and_stream(
         ]
         channel = grpc.aio.secure_channel(SALUTE_SPEECH_HOST, credentials, options=channel_options)
         stub = synthesisv2_pb2_grpc.SmartSpeechStub(channel)
-        logger.info("TTS Stream: gRPC channel создан")
 
         metadata = [("authorization", f"Bearer {token}")]
 
         async def request_generator():
-            logger.debug(f"TTS Stream: отправляем Options (voice={voice})")
-            # Используем PCM_S16LE для streaming (без WAV заголовков)
             options = synthesisv2_pb2.Options(
                 audio_encoding=synthesisv2_pb2.Options.AudioEncoding.PCM_S16LE,
                 language=language,
@@ -162,18 +183,13 @@ async def synthesize_and_stream(
             )
             yield synthesisv2_pb2.SynthesisRequest(options=options)
 
-            logger.info(f"TTS Stream: отправляем Text ({len(text)} символов)")
-            # Отправляем Text
             text_msg = synthesisv2_pb2.Text(
                 text=text,
                 content_type=synthesisv2_pb2.Text.ContentType.TEXT,
             )
             yield synthesisv2_pb2.SynthesisRequest(text=text_msg)
-            logger.info("TTS Stream: request_generator завершён")
 
-        logger.info("TTS Stream: вызываем gRPC Synthesize")
         response_stream = stub.Synthesize(request_generator(), metadata=metadata)
-        logger.info("TTS Stream: gRPC stream получен, начинаем итерацию")
 
         chunks_sent = 0
         total_bytes = 0
@@ -187,24 +203,25 @@ async def synthesize_and_stream(
                     total_bytes += len(audio_chunk)
 
         await channel.close()
+        channel = None
         logger.info(f"TTS Stream: отправлено {chunks_sent} chunks, {total_bytes} bytes")
 
     except asyncio.CancelledError:
-        logger.warning("TTS Stream: синтез отменён (клиент отключился)")
-        if channel:
-            await channel.close()
-        # Не пробрасываем исключение - просто выходим из функции
+        logger.warning("TTS Stream: синтез отменён")
     except grpc.aio.AioRpcError as e:
         logger.error(f"TTS Stream gRPC ошибка: {e.code()} {e.details()}")
         try:
             error_msg = json.dumps({"type": "error", "error": str(e.details())})
             await websocket.send_text(error_msg)
-        except:
+        except Exception:
             pass
     except Exception as e:
         logger.error(f"TTS Stream ошибка синтеза: {e}")
         try:
             error_msg = json.dumps({"type": "error", "error": str(e)})
             await websocket.send_text(error_msg)
-        except:
+        except Exception:
             pass
+    finally:
+        if channel:
+            await channel.close()
