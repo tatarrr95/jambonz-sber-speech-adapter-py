@@ -106,9 +106,12 @@ async def tts_endpoint(tts_request: TTSRequest) -> Response:
     try:
         token = await sber_auth.get_token()
 
+        # jambonz может добавлять метаданные через ';' (например Ost_8000;callSid=...)
+        voice = tts_request.voice.split(";")[0]
+
         audio_data = await synthesize_speech(
             text=tts_request.text,
-            voice=tts_request.voice,
+            voice=voice,
             language=tts_request.language,
             content_type=tts_request.type,
             token=token,

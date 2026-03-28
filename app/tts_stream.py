@@ -55,7 +55,9 @@ async def tts_stream_endpoint(websocket: WebSocket):
     # Парсим query params из URL
     query_params = dict(websocket.query_params)
     if "voice" in query_params:
-        voice = query_params["voice"]
+        # jambonz добавляет метаданные через ';' (например Ost_8000;callSid=...,env=dev)
+        # Sber API принимает только чистое имя голоса
+        voice = query_params["voice"].split(";")[0]
     if "language" in query_params:
         language = query_params["language"]
 
